@@ -1,0 +1,15 @@
+[project]
+name = "fganalysis-mcp"
+version = "0.1.0"
+description = "MCP server for fganalysis R package"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp",
+    "python-dotenv",
+    "google-cloud-aiplatform",
+    "google-generativeai",
+    "pandas"
+]
+
+[project.scripts]
+server = "fganalysis_mcp.server:main"

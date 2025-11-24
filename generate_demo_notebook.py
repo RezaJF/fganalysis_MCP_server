@@ -1,0 +1,145 @@
+import json
+
+notebook = {
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# fganalysis Agentic Workflow Demo\n",
+    "\n",
+    "This notebook demonstrates how to use Google Gemini (via Vertex AI or AI Studio) with the `fganalysis` MCP server tools to perform an agentic analysis.\n",
+    "\n",
+    "## Prerequisites\n",
+    "1. `fganalysis` R package installed.\n",
+    "2. `fganalysis-mcp` python package installed (`pip install -e .`).\n",
+    "3. `google-generativeai` installed.\n",
+    "4. `VERTEX_API_KEY` set in environment or `.env`."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import os\n",
+    "import google.generativeai as genai\n",
+    "from dotenv import load_dotenv\n",
+    "from fganalysis_mcp.server import (\n",
+    "    run_drug_response_analysis,\n",
+    "    run_blup_analysis,\n",
+    "    get_lab_data_summary,\n",
+    "    get_drug_purchases,\n",
+    "    plot_lab_distribution\n",
+    ")\n",
+    "\n",
+    "# Load environment variables\n",
+    "load_dotenv()\n",
+    "api_key = os.getenv(\"VERTEX_API_KEY\")\n",
+    "genai.configure(api_key=api_key)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Define Tools for Gemini\n",
+    "We map the MCP server functions to a format Gemini understands."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "tools = [\n",
+    "    run_drug_response_analysis,\n",
+    "    run_blup_analysis,\n",
+    "    get_lab_data_summary,\n",
+    "    get_drug_purchases,\n",
+    "    plot_lab_distribution\n",
+    "]\n",
+    "\n",
+    "# Initialize the model with tools\n",
+    "model = genai.GenerativeModel(\n",
+    "    model_name='gemini-1.5-pro-latest',\n",
+    "    tools=tools\n",
+    ")\n",
+    "\n",
+    "chat = model.start_chat(enable_automatic_function_calling=True)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Run Agentic Analysis\n",
+    "We ask the agent to perform a complex task. It will automatically call the necessary tools."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "query = \"\"\"\n",
+    "I want to analyze the effect of Statins (ATC code A10) on LDL cholesterol (OMOP ID 3001308).\n",
+    "Please follow these steps:\n",
+    "1. Check the summary of lab data for LDL.\n",
+    "2. Run a drug response analysis comparing 1 year before to 1 year after.\n",
+    "3. Generate a distribution plot of the results.\n",
+    "\"\"\"\n",
+    "\n",
+    "response = chat.send_message(query)\n",
+    "print(response.text)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Inspect Results\n",
+    "The agent should have created output files. Let's verify."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import glob\n",
+    "print(\"Generated Files:\")\n",
+    "for f in glob.glob(\"*.pdf\") + glob.glob(\"*.txt\"):\n",
+    "    print(f)"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.10.0"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
+
+with open("demo_agentic_workflow.ipynb", "w") as f:
+    json.dump(notebook, f, indent=1)
