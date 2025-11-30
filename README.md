@@ -32,12 +32,18 @@ An MCP server that exposes the capabilities of the `fganalysis` R package to AI 
 
 ```mermaid
 graph TD
-    Agent[AI Agent / Client] <-->|MCP Protocol| Server[MCP Server (Python)]
-    Server -->|Subprocess| Wrapper[R Wrappers (r_wrappers/*.R)]
-    Wrapper -->|Calls| Package[fganalysis (R Package)]
-    Package <-->|Reads/Writes| Data[(FinnGen Data / Output Files)]
-    
-    subgraph "fganalysis_MCP"
+    Agent["AI Agent / Client"]
+    Server["MCP Server (Python)"]
+    Wrapper["R Wrappers (r_wrappers/*.R)"]
+    Package["fganalysis (R Package)"]
+    Data["FinnGen Data / Output Files"]
+
+    Agent -- "MCP Protocol" --> Server
+    Server -- "Subprocess" --> Wrapper
+    Wrapper -- "Calls" --> Package
+    Package -- "Reads/Writes" --> Data
+
+    subgraph fganalysis_MCP
         Server
         Wrapper
     end
