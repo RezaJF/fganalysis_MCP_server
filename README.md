@@ -77,3 +77,33 @@ The server is written in Python and uses `subprocess` to call standalone R scrip
 To add a new tool:
 1.  Create a new R script in `r_wrappers/` that accepts JSON arguments and prints JSON output.
 2.  Add a new tool function in `fganalysis_mcp/server.py` that calls this script using `run_r_wrapper`.
+
+## Example Usage
+
+### Python Client Example
+
+```python
+from mcp import Client, StdioServerParameters
+
+# Connect to the server
+client = Client(StdioServerParameters(command="mcp", args=["run", "fganalysis_mcp/server.py"]))
+
+# List available tools
+tools = await client.list_tools()
+print(tools)
+
+# Call a tool
+result = await client.call_tool("get_lab_data_summary", {"lab_id": "3001308"})
+print(result)
+```
+
+## Author
+
+**Reza Jabal, PhD**
+rjabal@broadinstitute.org
+
+## License
+
+This project is licensed under the MIT License.
+
+
