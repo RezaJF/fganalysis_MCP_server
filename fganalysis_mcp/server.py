@@ -141,6 +141,23 @@ def plot_lab_distribution(lab_id: List[str], drug_codes: List[str], output_file:
     return json.dumps(result, indent=2)
 
 @mcp.tool()
+def execute_r_code(code: str, config_path: str = None) -> str:
+    """
+    Executes arbitrary R code using the fganalysis package.
+    The code has access to 'conn' (database connection).
+    
+    Args:
+        code: R code to execute.
+        config_path: Path to db_config.json.
+    """
+    params = {"code": code}
+    if config_path:
+        params["config_path"] = config_path
+        
+    result = run_r_wrapper("execute_r_code.R", params)
+    return json.dumps(result, indent=2)
+
+@mcp.tool()
 def generate_analysis_notebook(goal: str, output_path: str) -> str:
     """
     Generates a Jupyter notebook for fganalysis based on a goal.
