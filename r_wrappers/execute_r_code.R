@@ -1,45 +1,47 @@
 #!/usr/bin/env Rscript
-suppressPackageStartupMessages(library(fganalysis))
-suppressPackageStartupMessages(library(jsonlite))
-suppressPackageStartupMessages(library(dplyr))
-suppressPackageStartupMessages(library(ggplot2))
 
-args <- commandArgs(trailingOnly = TRUE)
-if (length(args) == 0) stop("No arguments provided")
-params <- fromJSON(args[1])
+args_all <- commandArgs(FALSE)
+file_arg <- sub("^--file=", "", args_all[grep("^--file=", args_all)][1])
+source(file.path(dirname(normalizePath(file_arg)), "common.R"))
 
-code <- params$code
-config_path <- params$config_path
+run_json_wrapper({
+  params <- read_params()
 
-# Connect to data
-conn <- connect_fgdata(config_path)
+  suppressPackageStartupMessages({
+    library(fganalysis)
+    library(dplyr)
+    library(ggplot2)
+  })
 
-# Create a safe environment for execution
-env <- new.env()
-assign("conn", conn, envir = env)
-assign("get_lab_measurements", get_lab_measurements, envir = env)
-assign("get_drug_purchases", get_drug_purchases, envir = env)
-assign("create_drug_response", create_drug_response, envir = env)
+  code <- params$code
+  if (is.null(code) || !nzchar(code)) {
+    stop("code is required.")
+  }
 
-# Execute code
-tryCatch({
-    # We wrap the code to capture the last expression or specific output
-    # For simplicity, we assume the code prints JSON or returns a value we can serialize
-    # Or we capture stdout.
-    
-    # Capture output
-    output <- capture.output({
-        eval(parse(text = code), envir = env)
-    })
-    
-    # Check if the code created any plots (ggsave) or files
-    # This is hard to track without explicit return, so we rely on stdout for now
-    
-    result <- list(
-        status = "success",
-        stdout = paste(output, collapse = "\n")
-    )
-    cat(toJSON(result, auto_unbox = TRUE))
-}, error = function(e) {
-    cat(toJSON(list(status = "error", message = e$message), auto_unbox = TRUE))
+  conn <- connect_from_config(params$config_path)
+  env <- new.env(parent = globalenv())
+  env$conn <- conn
+
+  for (name in getNamespaceExports("fganalysis")) {
+    assign(name, getExportedValue("fganalysis", name), envir = env)
+  }
+
+  value <- eval(parse(text = code), envir = env)
+
+  serialisable_value <- tryCatch(
+    jsonlite::fromJSON(jsonlite::toJSON(value, auto_unbox = TRUE, dataframe = "rows", null = "null", na = "null")),
+    error = function(e) {
+      list(
+        class = class(value),
+        message = "Return value could not be serialised to JSON; inspect stdout instead."
+      )
+    }
+  )
+
+  list(
+    status = "success",
+    result = serialisable_value,
+    result_class = class(value),
+    config_path = normalizePath(params$config_path, mustWork = TRUE)
+  )
 })

@@ -20,34 +20,20 @@ run_json_wrapper({
   config_path <- params$config_path
 
   conn <- connect_from_config(config_path)
-  drugs <- fganalysis::get_drug_purchases(
+  first_purch <- fganalysis::get_first_purchase(
     conn,
     druglist = drug_codes,
     finngen_ids = finngen_ids,
     use_only_reimbursement = use_only_reimbursement,
     use_atc_mapping = use_atc_mapping,
-    lazy = TRUE
-  )
-
-  count_data <- drugs %>% dplyr::summarise(n = dplyr::n()) %>% dplyr::collect()
-  preview_data <- drugs %>% utils::head(limit) %>% dplyr::collect()
-
-  expanded_codes <- tryCatch(
-    fganalysis::expand_atc_codes(
-      drug_codes,
-      include_hierarchical = FALSE,
-      verbose = FALSE,
-      require_mapping = use_atc_mapping
-    ),
-    error = function(e) drug_codes
+    lazy = FALSE
   )
 
   list(
     status = "success",
-    drug_codes = as_json_array(drug_codes),
-    expanded_drug_codes = as_json_array(expanded_codes),
-    count = as.numeric(count_data$n[[1]]),
-    preview = preview_data,
+    drug_codes = drug_codes,
+    n_individuals = nrow(first_purch),
+    preview = dataframe_preview(first_purch, limit),
     config_path = normalizePath(config_path, mustWork = TRUE)
   )
 })

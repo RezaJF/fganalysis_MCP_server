@@ -1,15 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "fganalysis-mcp"
-version = "0.1.0"
-description = "MCP server for fganalysis R package"
+version = "0.2.0"
+description = "Model Context Protocol server for the fganalysis R package"
 requires-python = ">=3.10"
 dependencies = [
     "mcp",
     "python-dotenv",
-    "google-cloud-aiplatform",
-    "google-generativeai",
-    "pandas"
+]
+
+[project.optional-dependencies]
+notebook = [
+    "google-generativeai"
 ]
 
 [project.scripts]
-server = "fganalysis_mcp.server:main"
+fganalysis-mcp = "fganalysis_mcp.server:main"
+
+[tool.setuptools.packages.find]
+include = ["fganalysis_mcp*"]

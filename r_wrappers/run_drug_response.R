@@ -1,54 +1,70 @@
 #!/usr/bin/env Rscript
-suppressPackageStartupMessages(library(fganalysis))
-suppressPackageStartupMessages(library(jsonlite))
-suppressPackageStartupMessages(library(dplyr))
 
-# Parse arguments
-args <- commandArgs(trailingOnly = TRUE)
-if (length(args) == 0) {
-  stop("No arguments provided. Expected JSON string.")
-}
+args_all <- commandArgs(FALSE)
+file_arg <- sub("^--file=", "", args_all[grep("^--file=", args_all)][1])
+source(file.path(dirname(normalizePath(file_arg)), "common.R"))
 
-params <- fromJSON(args[1])
+run_json_wrapper({
+  params <- read_params()
 
-# Extract parameters
-lab_id <- params$lab_id
-drug_codes <- params$drug_codes
-before_window <- params$before_window
-after_window <- params$after_window
-config_path <- params$config_path
-output_prefix <- params$output_prefix
+  suppressPackageStartupMessages({
+    library(fganalysis)
+  })
 
-# Connect to data
-if (!file.exists(config_path)) {
-    # Fallback for testing if config doesn't exist
-    stop(paste("Config file not found:", config_path))
-}
-conn <- connect_fgdata(config_path)
+  lab_id <- as_character_vector(params$lab_id, "lab_id")
+  drug_codes <- as_character_vector(params$drug_codes, "drug_codes")
+  before_window <- as_numeric_vector(params$before_window, "before_window", 2)
+  after_window <- as_numeric_vector(params$after_window, "after_window", 2)
+  filter_min_max <- as_numeric_vector(params$filter_min_max %||% c(-Inf, Inf), "filter_min_max", 2)
+  output_prefix <- params$output_prefix
+  config_path <- params$config_path
 
-# Run analysis
-tryCatch({
-    response_data <- create_drug_response(
-        conn = conn,
-        lablist = lab_id,
-        druglist = drug_codes,
-        before_period = before_window,
-        after_period = after_window
-    )
-    
-    # Summarize
-    summarize_drug_response(response_data, out_file_prefix = output_prefix)
-    
-    # Return result
-    result <- list(
-        status = "success",
-        output_files = list(
-            pdf = paste0(output_prefix, "_summary.pdf"),
-            tables = paste0(output_prefix, "_tables.txt") # Adjust based on actual output
-        )
-    )
-    cat(toJSON(result, auto_unbox = TRUE))
-}, error = function(e) {
-    result <- list(status = "error", message = e$message)
-    cat(toJSON(result, auto_unbox = TRUE))
+  if (is.null(output_prefix) || !nzchar(output_prefix)) {
+    stop("output_prefix is required.")
+  }
+  ensure_parent_dir(output_prefix)
+
+  conn <- connect_from_config(config_path)
+
+  response_data <- fganalysis::create_drug_response(
+    conn = conn,
+    lablist = lab_id,
+    druglist = drug_codes,
+    before_period = before_window,
+    after_period = after_window,
+    filter_min_max = filter_min_max,
+    use_lab_free_text_values = as_scalar_logical(params$use_lab_free_text_values, TRUE),
+    use_only_reimbursement_drugs = as_scalar_logical(params$use_only_reimbursement_drugs, FALSE),
+    use_atc_mapping = as_scalar_logical(params$use_atc_mapping, TRUE),
+    finngen_ids = as_nullable_character_vector(params$finngen_ids),
+    remove_outliers_sd = as_nullable_numeric(params$remove_outliers_sd)
+  )
+
+  fganalysis::summarize_drug_response(response_data, out_file_prefix = output_prefix)
+
+  upset_plot <- NULL
+  if (as_scalar_logical(params$create_upset_plot, FALSE)) {
+    fganalysis::summarize_drug_purchases_upset(response_data, out_file_prefix = output_prefix)
+    upset_plot <- paste0(output_prefix, "_upset_plot.pdf")
+  }
+
+  response_count <- nrow(response_data$responses)
+  complete_response_count <- sum(!is.na(response_data$responses$response))
+  output_files <- existing_files(c(
+    paste0(output_prefix, ".pdf"),
+    paste0(output_prefix, "_responses_by_drug.txt"),
+    paste0(output_prefix, "_labs_by_time_to_drug.txt"),
+    upset_plot
+  ))
+
+  list(
+    status = "success",
+    lab_id = lab_id,
+    drug_codes = drug_codes,
+    response_count = response_count,
+    complete_response_count = complete_response_count,
+    output_prefix = output_prefix,
+    output_files = output_files,
+    config_path = normalizePath(config_path, mustWork = TRUE)
+  )
 })

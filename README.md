@@ -1,12 +1,13 @@
 # fganalysis MCP Server
 
-An MCP server that exposes the capabilities of the `fganalysis` R package to AI agents. It also includes a tool to generate Jupyter notebooks using Google Vertex AI.
+An MCP server that exposes the `fganalysis` R package to agentic workflows. The server is designed for tools such as ClawBio that need structured access to FinnGen lab, drug-purchase, drug-response, BLUP-slope, median pre-drug phenotype, and ATC-code-mapping workflows.
 
 ## Prerequisites
 
 - Python 3.10+
-- R (with `fganalysis` package installed)
-- Google Cloud Vertex AI API Key (for notebook generation)
+- R 4.3+ with the `fganalysis` package installed
+- `jsonlite`, `dplyr`, `ggplot2`, and the R dependencies required by `fganalysis`
+- Optional: `google-generativeai` for notebook generation
 
 ## Installation
 
@@ -20,13 +21,12 @@ An MCP server that exposes the capabilities of the `fganalysis` R package to AI 
     pip install -e .
     ```
 
-3.  Configure Environment:
-    Create a `.env` file in the root directory (already created if you followed the setup):
-    ```env
-    VERTEX_API_KEY=your_api_key_here
-    VERTEX_PROJECT_ID=your_project_id
-    VERTEX_LOCATION=us-central1
+3.  Configure the default data connection:
+    ```bash
+    export FGANALYSIS_CONFIG_PATH=/path/to/fganalysis-r/config/db_config.json
     ```
+
+    Each tool also accepts an explicit `config_path`, which is preferred for reproducible agent workflows.
 
 ## Architecture
 
@@ -53,24 +53,41 @@ graph TD
 
 ### Running the Server
 
-You can run the server using the `mcp` CLI or directly via Python.
+You can run the server using the installed console script or directly via Python.
 
 ```bash
-mcp run fganalysis_mcp/server.py
+fganalysis-mcp
+```
+
+```bash
+python -m fganalysis_mcp.server
 ```
 
 ### Available Tools
 
--   `run_drug_response_analysis`: Performs drug response analysis.
--   `run_blup_analysis`: Calculates BLUP slopes.
--   `get_lab_data_summary`: Gets a summary of lab measurements.
--   `get_drug_purchases`: Gets a summary of drug purchases.
--   `plot_lab_distribution`: Generates a violin plot of lab values.
--   `generate_analysis_notebook`: Generates a Jupyter notebook for a specific analysis goal.
+- `inspect_fganalysis_environment`: Reports R, `fganalysis`, exported-function, wrapper, and optional config status.
+- `validate_fganalysis_config`: Validates the JSON connection config required by `connect_fgdata()`.
+- `get_lab_data_summary`: Counts and previews selected OMOP lab concept IDs.
+- `get_drug_purchases`: Counts and previews purchases for ATC code prefixes, with optional ATC mapping.
+- `get_first_drug_purchase`: Returns the first qualifying drug purchase per FINNGENID.
+- `get_measurements_before_drug`: Extracts pre-drug lab measurements (with exposed/unexposed indicators).
+- `run_drug_response_analysis`: Builds drug-response data and writes summary plots/tables.
+- `run_blup_analysis`: Calculates BLUP slopes from pre-drug longitudinal lab measurements.
+- `calculate_fixed_slopes`: OLS per-individual slopes (BLUP-comparable baseline).
+- `get_median_pre_drug_values`: Creates GWAS-ready median pre-drug phenotype files.
+- `plot_lab_distribution`: Writes before/after lab-value distribution plots.
+- `plot_median_pre_drug_diagnostics`: Diagnostic before/after MAD outlier removal plots.
+- `compute_drug_purchase_cadence`: Per-VNR purchase-interval (cadence) statistics.
+- `process_variance_files`: Inverse-rank-normalises BLUP variance files and summarises results.
+- `get_atc_code_relationships`: Expands ATC codes and returns historical/current relationships.
+- `load_atc_mappings_info`: Reports the active ATC mapping file metadata and preview.
+- `clear_atc_mappings_cache`: Clears the in-memory ATC mapping cache.
+- `execute_r_code`: Executes focused R snippets with `conn` and exported `fganalysis` functions in scope.
+- `generate_analysis_notebook`: Optional notebook generation, requiring `google-generativeai`.
 
 ## Architecture
 
-The server is written in Python and uses `subprocess` to call standalone R scripts located in `r_wrappers/`. These scripts interact with the `fganalysis` package and return JSON output.
+The server is written in Python and uses `subprocess` to call standalone R scripts located in `r_wrappers/`. Wrapper scripts use `r_wrappers/common.R` so progress output from R is captured and the MCP client receives one structured JSON object.
 
 ## Development
 
@@ -86,14 +103,17 @@ To add a new tool:
 from mcp import Client, StdioServerParameters
 
 # Connect to the server
-client = Client(StdioServerParameters(command="mcp", args=["run", "fganalysis_mcp/server.py"]))
+client = Client(StdioServerParameters(command="fganalysis-mcp"))
 
 # List available tools
 tools = await client.list_tools()
 print(tools)
 
 # Call a tool
-result = await client.call_tool("get_lab_data_summary", {"lab_id": "3001308"})
+result = await client.call_tool(
+    "get_lab_data_summary",
+    {"lab_id": ["3001308"], "config_path": "/path/to/db_config.json"},
+)
 print(result)
 ```
 
