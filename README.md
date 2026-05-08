@@ -6,9 +6,17 @@ This server is the executable backbone behind [`agentic_FinnGen`](https://github
 
 ## Demo
 
-[![Mithril × fganalysis-mcp — agentic FinnGen analysis demo](https://img.youtube.com/vi/x86xGqBB3hg/maxresdefault.jpg)](https://youtu.be/x86xGqBB3hg)
+<p align="center">
+  <a href="https://youtu.be/x86xGqBB3hg" title="Mithril × fganalysis-mcp — agentic FinnGen analysis demo">
+    <img src="https://img.youtube.com/vi/x86xGqBB3hg/maxresdefault.jpg" alt="Mithril × fganalysis-mcp — agentic FinnGen analysis demo" width="720">
+  </a>
+  <br>
+  <em>▶ Watch the Mithril × fganalysis-mcp walk-through on YouTube</em>
+</p>
 
-End-to-end walk-through of the Mithril multi-agent system answering real clinical-research questions over FinnGen data through this server's tools. Click the thumbnail to play on YouTube.
+End-to-end demonstration of the Mithril multi-agent system answering real clinical-research questions over FinnGen data through this server's MCP tools.
+
+> **Note on inline playback:** GitHub's markdown sanitiser strips `<iframe>` tags, so true inline YouTube embedding is not possible in a README. The thumbnail above is the standard GitHub-friendly pattern — click it to play on YouTube.
 
 ## Prerequisites
 
