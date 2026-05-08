@@ -2,6 +2,14 @@
 
 An MCP server that exposes the `fganalysis` R package to agentic workflows. The server is designed for tools such as ClawBio that need structured access to FinnGen lab, drug-purchase, drug-response, BLUP-slope, median pre-drug phenotype, and ATC-code-mapping workflows.
 
+This server is the executable backbone behind [`agentic_FinnGen`](https://github.com/RezaJF/agentic_FinnGen) (Mithril) — *"an advanced multi-agent system designed to accelerate biomedical research using FinnGen data"* — which uses Google ADK and Gemini 1.5 Pro to plan, research, analyse, code, and review FinnGen analyses, and reaches the underlying R bioinformatics environment **only through this server's MCP surface**.
+
+## Demo
+
+[![Mithril × fganalysis-mcp — agentic FinnGen analysis demo](https://img.youtube.com/vi/x86xGqBB3hg/maxresdefault.jpg)](https://youtu.be/x86xGqBB3hg)
+
+End-to-end walk-through of the Mithril multi-agent system answering real clinical-research questions over FinnGen data through this server's tools. Click the thumbnail to play on YouTube.
+
 ## Prerequisites
 
 - Python 3.10+
@@ -172,7 +180,26 @@ A pure-skills approach (the model writes R itself and executes it via a generic 
 
 ### Fit with `agentic_FinnGen` (Mithril)
 
-[`agentic_FinnGen`](https://github.com/RezaJF/agentic_FinnGen) — internal name **Mithril** — is a five-agent system (Planner / Researcher / Analyst / Coder / Reviewer) that translates clinical questions into FinnGen statistical analyses. The Coder agent generates ad-hoc R against `fganalysis`; the Analyst runs pre-defined pipelines (drug-response, BLUP); the Planner decomposes the user query and routes between them; the Reviewer validates Coder output with a 3-attempt retry loop.
+[`agentic_FinnGen`](https://github.com/RezaJF/agentic_FinnGen) — internal name **Mithril** — describes itself as *"an advanced multi-agent system designed to accelerate biomedical research using FinnGen data"*, built on Google's Agent Development Kit (ADK) with Gemini 1.5 Pro powering every agent. The capstone writeup ([Kaggle "Agents Intensive — Capstone Project", track *Agents for Good*](https://www.kaggle.com/competitions/agents-intensive-capstone-project/writeups/mithril-the-agentic-finngen-analysis-system)) frames the motivation directly: *"Mithril acts as a virtual research assistant that bridges the gap between medical expertise and bioinformatics. By automating the translation of clinical questions into rigorous statistical analyses, it democratizes access to the data and accelerates the pace of discovery."*
+
+The system runs five specialised agents that collaborate through a hierarchical planner loop:
+
+| Agent | Role | Responsibility |
+|---|---|---|
+| **Planner** | orchestrator / "central brain" | Decomposes the user query, manages session memory via `FileBasedMemory`, routes between standard pipelines and ad-hoc code generation. |
+| **Researcher** | domain expert | Scrapes phenotype and ontology context from `risteys.finngen.fi`. |
+| **Analyst** | statistician | Runs pre-defined pipelines (drug-response, BLUP) by calling MCP tools on this server. |
+| **Coder** | programmer | Writes ad-hoc R against `fganalysis` for queries outside the pre-defined pipelines, executed through the sandboxed `execute_r_code` MCP tool. |
+| **Reviewer** | auditor | Validates Coder output, checks "for logical errors or empty results", and triggers a retry loop (up to three attempts) before returning control to the Planner. |
+
+The capstone writeup names the MCP boundary as a deliberate design pillar: *"A custom MCP server was built to bridge the Python-based agents with the R-based bioinformatics environment."* In Mithril's architecture diagram, both the Analyst and the Coder connect to `fganalysis MCP Server` over the **MCP Protocol** — i.e. *this* server. The "Why agents?" section adds a third pillar specific to the capability surface: *"Real-world code often fails. Agents can read error messages, debug their own code, and retry — something a standard script or LLM cannot do."* This MCP server is what makes that retry loop concrete: every tool returns a structured JSON envelope (`status`, `error_type`, `message`, `stderr`) instead of an unstructured shell error, so the Reviewer can reason over the failure programmatically.
+
+Mithril's four headline use cases all flow through this boundary:
+
+1. **GLP-1 agonist weight-loss analysis** — drug-response pipelines on cohorts exposed to GLP-1 agonists, via `run_drug_response_analysis` and `get_measurements_before_drug`.
+2. **CKD trajectory modelling** — longitudinal eGFR slopes for chronic-kidney-disease progression, via `run_blup_analysis` and `calculate_fixed_slopes`.
+3. **Comorbidity & polypharmacy overlap** — cohort intersection across hypertension / statin / GLP-1 exposures, via `get_drug_purchases` and `get_first_drug_purchase` with ATC-mapping enabled.
+4. **Pharmacome-Wide Association Study (PheWAS)** — broad ATC-coded drug-purchase associations, via `get_atc_code_relationships` plus the median-pre-drug phenotype generators.
 
 Today, Mithril's `src/tools/mcp_bridge.py` integrates with this server by manipulating `sys.path` and importing the Python module directly:
 
@@ -211,6 +238,10 @@ Concrete wins for Mithril:
 - **Full tool coverage.** All 19 tools become available to every Mithril agent automatically — no need to extend `get_fganalysis_tools()` each time a new wrapper is added here.
 
 A pragmatic migration: keep `mcp_bridge.py` as a single bridge function that spawns `fganalysis-mcp`, calls `tools/list`, and adapts each MCP tool descriptor into a Gemini function-call descriptor. Once Mithril supports more than one provider, drop the adapter and let each provider's native MCP client consume the server unchanged.
+
+### Roadmap as Mithril grows
+
+The capstone *"If I had more time"* section names three forward-looking directions: (1) integrated GWAS and burden-testing pipelines, (2) [TxGemma](https://research.google/blog/introducing-txgemma-open-models-for-therapeutics/) integration for therapeutic-target reasoning, and (3) a unified end-to-end drug-discovery agent that composes Mithril + GWAS + TxGemma. Each of those builds *on top of* this server's existing 19 tools — adding new wrappers, not reshaping the protocol surface. The MCP contract holds: a richer `tools/list` response is the only thing Mithril (or any other client) needs to absorb. Concretely, GWAS integration adds a small number of new wrappers around association-test runners; TxGemma integration is a separate MCP server consumed in parallel; the drug-discovery composition is an agent-level orchestration concern, not a transport-level one.
 
 ## Development
 
