@@ -1,10 +1,27 @@
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import unittest
 
 from fganalysis_mcp import server
+
+
+def _rscript_has_fganalysis() -> bool:
+    rscript = server.RSCRIPT
+    if not shutil.which(rscript):
+        return False
+    result = subprocess.run(
+        [rscript, "-e", "library(fganalysis, quietly=TRUE)"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    return result.returncode == 0
+
+
+_RSCRIPT_WITH_FGANALYSIS = _rscript_has_fganalysis()
 
 
 class ServerJsonParsingTests(unittest.TestCase):
@@ -39,7 +56,11 @@ class ServerPathTests(unittest.TestCase):
         self.assertEqual(json.loads(encoded)["status"], "success")
 
 
-@unittest.skipUnless(shutil.which("Rscript"), "Rscript is required for R wrapper tests")
+@unittest.skipUnless(
+    _RSCRIPT_WITH_FGANALYSIS,
+    "Rscript with fganalysis package is required for R wrapper tests "
+    f"(set RSCRIPT_PATH env var if R is not on PATH; current: {server.RSCRIPT!r})",
+)
 class OfflineRWrapperTests(unittest.TestCase):
     """Smoke tests that exercise R wrappers which do not need a FinnGen connection."""
 

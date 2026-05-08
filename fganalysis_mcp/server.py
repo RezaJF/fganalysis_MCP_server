@@ -18,6 +18,7 @@ mcp = FastMCP("fganalysis-mcp")
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WRAPPER_DIR = REPO_ROOT / "r_wrappers"
+RSCRIPT = os.environ.get("RSCRIPT_PATH", "Rscript")
 DEFAULT_CONFIG_PATH = (
     Path(os.environ.get("FGANALYSIS_CONFIG_PATH", ""))
     if os.environ.get("FGANALYSIS_CONFIG_PATH")
@@ -100,7 +101,7 @@ def run_r_wrapper(
 
     try:
         completed = subprocess.run(
-            ["Rscript", str(script_path), json.dumps(wrapper_params)],
+            [RSCRIPT, str(script_path), json.dumps(wrapper_params)],
             capture_output=True,
             check=False,
             text=True,
