@@ -34,6 +34,237 @@ End-to-end walk-through of the Mithril multi-agent system answering real clinica
 
     Each tool also accepts an explicit `config_path`, which is preferred for reproducible agent workflows.
 
+## Connecting `fganalysis-mcp` to LLM clients
+
+Once `fganalysis-mcp` is installed and reachable on your `PATH` (or via an absolute path), any MCP-aware client can launch it as a subprocess over stdio. The recipes below cover the four largest LLM providers. Every recipe spawns the same server and surfaces the same 19 tools to the model — only the wiring differs.
+
+The two environment variables every recipe sets:
+
+- **`FGANALYSIS_CONFIG_PATH`** — the JSON connection config consumed by `fganalysis::connect_fgdata()`.
+- **`RSCRIPT_PATH`** — the absolute path to the `Rscript` binary whose R library has `fganalysis` installed; defaults to `Rscript` on `PATH` if unset.
+
+> **Tip:** before plugging into any client, smoke-test that the server starts and advertises all 19 tools (script at the end of this section).
+
+### Anthropic — Claude Code
+
+Edit `.claude/settings.json` (project-local) or `~/.claude/settings.json` (user-global) and add an `mcpServers` entry:
+
+```json
+{
+  "mcpServers": {
+    "fganalysis": {
+      "command": "fganalysis-mcp",
+      "env": {
+        "FGANALYSIS_CONFIG_PATH": "/absolute/path/to/fganalysis-r/config/db_config.json",
+        "RSCRIPT_PATH": "/absolute/path/to/Rscript"
+      }
+    }
+  }
+}
+```
+
+After Claude Code reloads, all 19 tools appear under the `mcp__fganalysis__*` namespace and are callable from chat.
+
+### Anthropic — Claude Desktop
+
+Edit the Desktop config file:
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "fganalysis": {
+      "command": "/absolute/path/to/fganalysis-mcp",
+      "env": {
+        "FGANALYSIS_CONFIG_PATH": "/absolute/path/to/fganalysis-r/config/db_config.json",
+        "RSCRIPT_PATH": "/absolute/path/to/Rscript"
+      }
+    }
+  }
+}
+```
+
+Always use **absolute paths** for `command` in Claude Desktop — it does not inherit your shell's `PATH`. Restart the app to pick up changes.
+
+### Anthropic — Python SDK (Messages API)
+
+For programmatic use, drive the server through `mcp.client.stdio` and adapt the tool schemas to Anthropic's tool format:
+
+```python
+import asyncio
+from anthropic import Anthropic
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+async def main():
+    server = StdioServerParameters(
+        command="fganalysis-mcp",
+        env={
+            "FGANALYSIS_CONFIG_PATH": "/absolute/path/to/db_config.json",
+            "RSCRIPT_PATH": "/absolute/path/to/Rscript",
+        },
+    )
+    async with stdio_client(server) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            mcp_tools = (await session.list_tools()).tools
+            anthropic_tools = [
+                {
+                    "name": t.name,
+                    "description": t.description,
+                    "input_schema": t.inputSchema,
+                }
+                for t in mcp_tools
+            ]
+
+            client = Anthropic()
+            messages = [{"role": "user", "content": "Preview 10 rows for lab 3001308."}]
+
+            while True:
+                resp = client.messages.create(
+                    model="claude-sonnet-4-5",   # swap for current model
+                    max_tokens=2048,
+                    tools=anthropic_tools,
+                    messages=messages,
+                )
+                messages.append({"role": "assistant", "content": resp.content})
+                if resp.stop_reason != "tool_use":
+                    for block in resp.content:
+                        if getattr(block, "text", None):
+                            print(block.text)
+                    break
+                for block in resp.content:
+                    if block.type == "tool_use":
+                        result = await session.call_tool(block.name, block.input)
+                        messages.append({
+                            "role": "user",
+                            "content": [{
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": result.content[0].text if result.content else "",
+                            }],
+                        })
+
+asyncio.run(main())
+```
+
+### Cursor
+
+Add the server to `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (project-local):
+
+```json
+{
+  "mcpServers": {
+    "fganalysis": {
+      "command": "fganalysis-mcp",
+      "env": {
+        "FGANALYSIS_CONFIG_PATH": "/absolute/path/to/fganalysis-r/config/db_config.json",
+        "RSCRIPT_PATH": "/absolute/path/to/Rscript"
+      }
+    }
+  }
+}
+```
+
+The 19 tools become available in Cursor's **Composer** / **Agent** mode after a Cursor restart. Verify in **Settings → MCP** that the server status is green.
+
+### Google — Gemini / Agent Development Kit (ADK)
+
+ADK has first-class MCP support via `MCPToolset`. Wrap the server once and hand the toolset to any ADK agent:
+
+```python
+from google.adk.agents import LlmAgent
+from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
+from mcp import StdioServerParameters
+
+toolset = MCPToolset(
+    connection_params=StdioServerParameters(
+        command="fganalysis-mcp",
+        env={
+            "FGANALYSIS_CONFIG_PATH": "/absolute/path/to/db_config.json",
+            "RSCRIPT_PATH": "/absolute/path/to/Rscript",
+        },
+    )
+)
+
+agent = LlmAgent(
+    name="finngen_analyst",
+    model="gemini-2.0-flash",   # or gemini-2.5-pro for harder reasoning
+    instruction=(
+        "You are a FinnGen biobank analyst. "
+        "Use the fganalysis tools to answer clinical questions."
+    ),
+    tools=[toolset],
+)
+```
+
+For the bare `google-generativeai` SDK (no ADK), list MCP tools the same way as the Anthropic recipe and adapt each `t.inputSchema` into `genai.protos.FunctionDeclaration` with `genai.protos.Tool(function_declarations=[...])`.
+
+### OpenAI — Agents SDK
+
+The `openai-agents` Python package has native MCP support via `MCPServerStdio`:
+
+```python
+import asyncio
+from agents import Agent, Runner
+from agents.mcp import MCPServerStdio
+
+async def main():
+    async with MCPServerStdio(
+        params={
+            "command": "fganalysis-mcp",
+            "env": {
+                "FGANALYSIS_CONFIG_PATH": "/absolute/path/to/db_config.json",
+                "RSCRIPT_PATH": "/absolute/path/to/Rscript",
+            },
+        }
+    ) as mcp_server:
+        agent = Agent(
+            name="FinnGen analyst",
+            instructions=(
+                "Use the fganalysis tools to answer clinical questions about FinnGen data."
+            ),
+            mcp_servers=[mcp_server],
+        )
+        result = await Runner.run(agent, "Preview 10 rows for lab 3001308.")
+        print(result.final_output)
+
+asyncio.run(main())
+```
+
+For the bare Chat Completions API (no Agents SDK), use the same `mcp.client.stdio` + tool-adaptation pattern as the Anthropic recipe — convert each MCP tool to `{"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}` and pass it via the `tools` argument to `client.chat.completions.create(...)`.
+
+### Smoke-test before connecting
+
+Run this one-liner to confirm the server boots and `tools/list` returns all 19 tools — useful for catching `PATH`, R-library, or env-var issues before any LLM client is involved:
+
+```bash
+RSCRIPT_PATH=/absolute/path/to/Rscript \
+FGANALYSIS_CONFIG_PATH=/absolute/path/to/db_config.json \
+python -c "
+import asyncio
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+async def main():
+    params = StdioServerParameters(command='fganalysis-mcp')
+    async with stdio_client(params) as (r, w):
+        async with ClientSession(r, w) as s:
+            await s.initialize()
+            tools = (await s.list_tools()).tools
+            print(f'{len(tools)} tools advertised')
+            for t in tools:
+                print(f'  - {t.name}')
+
+asyncio.run(main())
+"
+```
+
+Expected output: `19 tools advertised` followed by the tool names. If the count is lower or the script errors out, fix the reported issue before connecting any LLM client.
+
 ## Architecture
 
 ```mermaid
