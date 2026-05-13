@@ -26,7 +26,8 @@ run_json_wrapper({
 
   conn <- connect_from_config(config_path)
 
-  response_data <- fganalysis::create_drug_response(
+  response_data <- call_supported(
+    fganalysis::create_drug_response,
     conn = conn,
     lablist = lab_id,
     druglist = drug_codes,

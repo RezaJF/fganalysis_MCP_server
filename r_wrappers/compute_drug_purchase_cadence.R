@@ -29,7 +29,8 @@ run_json_wrapper({
     stop("compute_drug_purchase_cadence requires the connection config to include the 'vnr' table.")
   }
 
-  purchases <- fganalysis::get_drug_purchases(
+  purchases <- call_supported(
+    fganalysis::get_drug_purchases,
     conn,
     druglist = drug_codes,
     use_only_reimbursement = use_only_reimbursement,

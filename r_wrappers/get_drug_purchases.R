@@ -20,7 +20,8 @@ run_json_wrapper({
   config_path <- params$config_path
 
   conn <- connect_from_config(config_path)
-  drugs <- fganalysis::get_drug_purchases(
+  drugs <- call_supported(
+    fganalysis::get_drug_purchases,
     conn,
     druglist = drug_codes,
     finngen_ids = finngen_ids,
@@ -33,7 +34,8 @@ run_json_wrapper({
   preview_data <- drugs %>% utils::head(limit) %>% dplyr::collect()
 
   expanded_codes <- tryCatch(
-    fganalysis::expand_atc_codes(
+    call_supported(
+      fganalysis::expand_atc_codes,
       drug_codes,
       include_hierarchical = FALSE,
       verbose = FALSE,

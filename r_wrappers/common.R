@@ -87,6 +87,42 @@ connect_from_config <- function(config_path) {
   fganalysis::connect_fgdata(config_path)
 }
 
+# Call an `fganalysis` function while silently dropping any named arguments
+# that the installed version does not declare in its formals. Emits a
+# `message()` for each dropped argument so the MCP envelope's `messages`
+# field surfaces the version skew to the client / Reviewer agent.
+#
+# Forward-compatibility shim for upstream params (e.g. `use_atc_mapping`)
+# that ship in FINNGEN/fganalysis-r#30 but are absent from current master.
+# Once those params merge upstream, this helper is a no-op for that arg.
+#
+# Positional arguments are preserved in order; named arguments are filtered.
+call_supported <- function(fn, ...) {
+  args <- list(...)
+  arg_names <- names(args)
+  if (is.null(arg_names)) {
+    arg_names <- character(length(args))
+  }
+
+  supported <- names(formals(fn))
+  is_named <- nzchar(arg_names)
+  named_args <- args[is_named]
+  unnamed_args <- args[!is_named]
+
+  unsupported <- setdiff(names(named_args), supported)
+  if (length(unsupported) > 0) {
+    for (param_name in unsupported) {
+      message(sprintf(
+        "Argument '%s' not supported by installed fganalysis function; dropping (upstream version skew vs FINNGEN/fganalysis-r#30)",
+        param_name
+      ))
+    }
+    named_args <- named_args[!names(named_args) %in% unsupported]
+  }
+
+  do.call(fn, c(unnamed_args, named_args))
+}
+
 existing_files <- function(paths) {
   paths <- as.character(unlist(paths, use.names = FALSE))
   paths <- paths[file.exists(paths)]

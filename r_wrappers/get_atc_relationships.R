@@ -16,7 +16,8 @@ run_json_wrapper({
   require_mapping <- as_scalar_logical(params$require_mapping, FALSE)
   custom_mapping_file <- params$custom_mapping_file %||% NULL
 
-  expanded_codes <- fganalysis::expand_atc_codes(
+  expanded_codes <- call_supported(
+    fganalysis::expand_atc_codes,
     atc_codes,
     include_hierarchical = include_hierarchical,
     verbose = FALSE,

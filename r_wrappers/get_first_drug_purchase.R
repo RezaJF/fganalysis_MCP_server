@@ -20,7 +20,8 @@ run_json_wrapper({
   config_path <- params$config_path
 
   conn <- connect_from_config(config_path)
-  first_purch <- fganalysis::get_first_purchase(
+  first_purch <- call_supported(
+    fganalysis::get_first_purchase,
     conn,
     druglist = drug_codes,
     finngen_ids = finngen_ids,
