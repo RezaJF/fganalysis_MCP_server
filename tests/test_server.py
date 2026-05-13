@@ -1,11 +1,15 @@
 import json
 import os
+import pathlib
 import shutil
 import subprocess
 import tempfile
 import unittest
 
 from fganalysis_mcp import server
+
+
+COMMON_R = pathlib.Path(__file__).resolve().parents[1] / "r_wrappers" / "common.R"
 
 
 def _rscript_has_fganalysis() -> bool:
@@ -97,6 +101,156 @@ class OfflineRWrapperTests(unittest.TestCase):
             self.assertEqual(payload.get("n_files_processed"), 1)
             self.assertIsInstance(payload["output_files"], list)
             self.assertEqual(len(payload["output_files"]), 1)
+
+
+@unittest.skipUnless(
+    shutil.which(server.RSCRIPT),
+    f"Rscript is required for call_supported tests (current: {server.RSCRIPT!r})",
+)
+class CallSupportedTests(unittest.TestCase):
+    """Regression tests for the call_supported() formals-guard helper.
+
+    These tests do NOT require fganalysis to be installed — they source
+    common.R into a fresh Rscript process, define a local stub function
+    with a restricted formals list, and verify the helper's behaviour
+    against that stub. This is exactly the situation a user with an
+    upstream-master fganalysis (lacking FINNGEN/fganalysis-r#30) lands
+    in: the named arg `use_atc_mapping` should be silently dropped and
+    a notice surfaced via `message()`.
+    """
+
+    def _run_r(self, body: str) -> subprocess.CompletedProcess:
+        script = (
+            f'source("{COMMON_R.as_posix()}")\n'
+            f"{body}\n"
+        )
+        return subprocess.run(
+            [server.RSCRIPT, "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+    def test_drops_unsupported_named_arg_and_returns_value(self) -> None:
+        result = self._run_r(
+            """
+            stub <- function(x, y) x + y
+            value <- call_supported(stub, x = 2, y = 3, use_atc_mapping = TRUE)
+            cat(sprintf("VALUE=%d", value))
+            """
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("VALUE=5", result.stdout)
+        # message() output goes to stderr in R; helper must announce the drop
+        self.assertIn("use_atc_mapping", result.stderr)
+        self.assertIn("dropping", result.stderr)
+
+    def test_passes_supported_arg_through_unchanged(self) -> None:
+        result = self._run_r(
+            """
+            stub <- function(x, y, use_atc_mapping = FALSE) {
+              if (use_atc_mapping) x * y else x + y
+            }
+            value <- call_supported(stub, x = 2, y = 3, use_atc_mapping = TRUE)
+            cat(sprintf("VALUE=%d", value))
+            """
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # Supported arg is forwarded -> stub uses multiplication branch
+        self.assertIn("VALUE=6", result.stdout)
+        # No drop message should be emitted for a supported arg
+        self.assertNotIn("dropping", result.stderr)
+
+    def test_preserves_positional_args(self) -> None:
+        result = self._run_r(
+            """
+            stub <- function(first, second) paste(first, second, sep = "::")
+            value <- call_supported(
+              stub,
+              "alpha", "beta",
+              use_atc_mapping = TRUE
+            )
+            cat(sprintf("VALUE=%s", value))
+            """
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("VALUE=alpha::beta", result.stdout)
+        self.assertIn("use_atc_mapping", result.stderr)
+
+    def test_drops_multiple_unsupported_args(self) -> None:
+        result = self._run_r(
+            """
+            stub <- function(x) x * 10
+            value <- call_supported(
+              stub,
+              x = 4,
+              use_atc_mapping = TRUE,
+              require_mapping = FALSE,
+              future_param = "ignored"
+            )
+            cat(sprintf("VALUE=%d", value))
+            """
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("VALUE=40", result.stdout)
+        for dropped in ("use_atc_mapping", "require_mapping", "future_param"):
+            self.assertIn(dropped, result.stderr)
+
+    def test_simulates_upstream_master_get_drug_purchases(self) -> None:
+        """Reproduces the exact scenario from issue #1.
+
+        Simulates the upstream FINNGEN/fganalysis-r master branch's
+        get_drug_purchases (whose formals do NOT include use_atc_mapping,
+        because that param ships in unmerged PR #30) and drives it with
+        the exact call pattern used inside get_drug_purchases.R. The
+        wrapper must complete successfully, deliver the supported args
+        verbatim to the upstream stub, and emit a stderr notice for the
+        dropped use_atc_mapping.
+        """
+        result = self._run_r(
+            """
+            # Stub mirrors upstream-master get_drug_purchases formals.
+            # Critically, no use_atc_mapping parameter.
+            upstream_master_get_drug_purchases <- function(
+              conn,
+              druglist,
+              finngen_ids = NULL,
+              use_only_reimbursement = FALSE,
+              lazy = TRUE
+            ) {
+              list(
+                conn_label = "fake_conn",
+                druglist = druglist,
+                finngen_ids = finngen_ids,
+                use_only_reimbursement = use_only_reimbursement,
+                lazy = lazy
+              )
+            }
+
+            # Exact call pattern from get_drug_purchases.R post-fix.
+            result <- call_supported(
+              upstream_master_get_drug_purchases,
+              "fake_conn_obj",
+              druglist = c("A10BJ", "C10AA01"),
+              finngen_ids = NULL,
+              use_only_reimbursement = FALSE,
+              use_atc_mapping = TRUE,
+              lazy = TRUE
+            )
+
+            stopifnot(identical(result$druglist, c("A10BJ", "C10AA01")))
+            stopifnot(identical(result$lazy, TRUE))
+            stopifnot(identical(result$use_only_reimbursement, FALSE))
+            cat("UPSTREAM_MASTER_OK")
+            """
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("UPSTREAM_MASTER_OK", result.stdout)
+        self.assertIn("use_atc_mapping", result.stderr)
+        self.assertIn("dropping", result.stderr)
+        # No other params should be reported as dropped
+        self.assertNotIn("'druglist'", result.stderr)
+        self.assertNotIn("'lazy'", result.stderr)
 
 
 if __name__ == "__main__":

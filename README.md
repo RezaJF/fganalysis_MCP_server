@@ -15,6 +15,8 @@ End-to-end walk-through of the Mithril multi-agent system answering real clinica
 - `jsonlite`, `dplyr`, `ggplot2`, and the R dependencies required by `fganalysis`
 - Optional: `google-generativeai` for notebook generation
 
+> **Note on `use_atc_mapping` and `require_mapping` arguments.** The wrappers tolerate version skew with upstream `fganalysis-r`: every call into the R package is routed through a formals-guard (`call_supported()` in [`r_wrappers/common.R`](r_wrappers/common.R)) that silently drops named arguments the installed version does not declare. If your `fganalysis` install is older than [FINNGEN/fganalysis-r#30](https://github.com/FINNGEN/fganalysis-r/pull/30), the `use_atc_mapping` flag is dropped on the way through and a notice surfaces in the response's `messages` array. The server keeps working; the feature simply falls back to whatever the installed version does by default.
+
 ## Installation
 
 1.  Clone this repository (as a sibling to `fganalysis-r`):

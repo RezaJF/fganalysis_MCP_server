@@ -21,7 +21,8 @@ run_json_wrapper({
 
   conn <- connect_from_config(config_path)
 
-  measurements <- fganalysis::get_measurements_before_drug(
+  measurements <- call_supported(
+    fganalysis::get_measurements_before_drug,
     conn = conn,
     lablist = lab_id,
     druglist = drug_codes,

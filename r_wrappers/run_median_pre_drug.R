@@ -18,7 +18,8 @@ run_json_wrapper({
 
   conn <- connect_from_config(config_path)
 
-  output <- fganalysis::get_median_pre_drug(
+  output <- call_supported(
+    fganalysis::get_median_pre_drug,
     conn = conn,
     lablist = lab_id,
     druglist = drug_codes,
